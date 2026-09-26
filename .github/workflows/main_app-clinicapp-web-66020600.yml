@@ -10,6 +10,10 @@ on:
       - '.github/workflows/main_app-clinicapp-web-66020600.yml'
   workflow_dispatch:
 
+env:
+  VITE_API_BASE: https://app-clinicapp-api-66020600-fwbkahh0hbaje5h7.centralindia-01.azurewebsites.net
+  WEB_URL: https://app-clinicapp-web-66020600-bxh5a0arfud9fqgj.centralindia-01.azurewebsites.net
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -69,3 +73,60 @@ jobs:
           app-name: 'app-clinicapp-web-66020600'
           slot-name: 'Production'
           package: web-dist
+          startup-command: 'pm2 serve /home/site/wwwroot ${PORT:-8080} --no-daemon --spa'
+
+      - name: Verify live frontend and API
+        timeout-minutes: 8
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs/promises');
+          const api = process.env.VITE_API_BASE;
+          const web = process.env.WEB_URL;
+          async function request(url, options = {}) {
+            return fetch(url, { ...options, signal: AbortSignal.timeout(20000) });
+          }
+          async function check() {
+            const page = await request(web);
+            assert.equal(page.status, 200, 'Frontend must return HTTP 200');
+            const html = await page.text();
+            const expected = await fs.readFile('web-dist/index.html', 'utf8');
+            assert.equal(html.trim(), expected.trim(), 'Frontend must serve this deployment');
+            const src = html.match(/<script[^>]+src="([^"]+)"/)?.[1];
+            assert.ok(src, 'Built JavaScript entry must exist');
+            const asset = await request(new URL(src, web));
+            assert.equal(asset.status, 200, 'Built JavaScript must be reachable');
+            assert.ok((await asset.text()).includes(api), 'Built JavaScript must use the correct API');
+            const health = await request(api);
+            assert.equal(health.status, 200, 'API health must return HTTP 200');
+            assert.equal((await health.json()).service, 'clinic-api');
+            for (const path of ['/doctors', '/appointments']) {
+              const response = await request(api + path, { headers: { Origin: web } });
+              assert.equal(response.status, 200, path + ' must return HTTP 200');
+              assert.ok(['*', web].includes(response.headers.get('access-control-allow-origin')), path + ' must allow frontend CORS');
+              const rows = await response.json();
+              assert.ok(Array.isArray(rows), path + ' must return a JSON array');
+              if (path === '/doctors') assert.ok(rows.length > 0, 'Doctors seed data must exist');
+              console.log(path + ': OK (' + rows.length + ' rows; contents omitted)');
+            }
+            const preflight = await request(api + '/appointments', {
+              method: 'OPTIONS',
+              headers: { Origin: web, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' }
+            });
+            assert.ok(preflight.ok, 'Booking CORS preflight must succeed');
+            assert.ok(['*', web].includes(preflight.headers.get('access-control-allow-origin')));
+            assert.ok(preflight.headers.get('access-control-allow-methods')?.includes('POST'));
+            assert.ok(preflight.headers.get('access-control-allow-headers')?.toLowerCase().includes('content-type'));
+            console.log('PASS: current frontend, JavaScript, API URL, health, SQL reads, and booking CORS');
+          }
+          (async () => {
+            for (let attempt = 1; attempt <= 12; attempt++) {
+              try { await check(); return; }
+              catch (error) {
+                console.log('Check ' + attempt + '/12: ' + error.message);
+                if (attempt === 12) throw error;
+                await new Promise(resolve => setTimeout(resolve, 10000));
+              }
+            }
+          })().catch(error => { console.error(error.message); process.exit(1); });
+          NODE
