@@ -53,6 +53,24 @@ app.post('/appointments', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// delete appointment by id
+app.delete('/appointments/:id', async (req, res, next) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0 || id > 2147483647) {
+    return res.status(400).json({ error: 'invalid_id' });
+  }
+  try {
+    const pool = await getSqlPool();
+    const r = await pool.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM appointments WHERE id = @id');
+    if (r.rowsAffected[0] === 0) {
+      return res.status(404).json({ error: 'not_found' });
+    }
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 app.use((err, _req, res, _next) => {
   if (err.code === 'NO_DB_CONFIG') {
     return res.status(503).json({
@@ -64,6 +82,11 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'internal_error', message: err.message });
 });
 
-app.listen(PORT, () => {
-  console.log(`clinic-api listening on :${PORT}`);
-});
+const isDirectRun = process.argv[1] && process.argv[1].endsWith('index.js');
+if (isDirectRun) {
+  app.listen(PORT, () => {
+    console.log(`clinic-api listening on :${PORT}`);
+  });
+}
+
+export default app;

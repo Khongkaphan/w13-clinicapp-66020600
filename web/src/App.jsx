@@ -9,6 +9,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ doctor_id: '', patient_name: '', slot: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [cancellingId, setCancellingId] = useState(null);
+
 
   async function load() {
     try {
@@ -51,6 +53,9 @@ export default function App() {
       setSubmitting(false);
     }
   }
+  async function onCancel(id) {if (!confirm('ยกเลิกนัดนี้จริงไหม?')) return;setCancellingId(id);setError(null);try {const r = await fetch(`${API_BASE}/appointments/${id}`, { method: 'DELETE' });if (!r.ok) throw await r.json().catch(() => ({ error: 'http_error' }));await load();} catch (e) {setError(e.error || 'failed_to_cancel');} finally {setCancellingId(null);}}
+
+
 
   return (
     <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 720, margin: '2rem auto', padding: '0 1rem' }}>
@@ -115,6 +120,7 @@ export default function App() {
                   <th style={{ padding: '0.25rem' }}>Slot</th>
                   <th style={{ padding: '0.25rem' }}>Patient</th>
                   <th style={{ padding: '0.25rem' }}>Doctor</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -123,6 +129,7 @@ export default function App() {
                     <td style={{ padding: '0.25rem' }}>{new Date(a.slot).toLocaleString()}</td>
                     <td style={{ padding: '0.25rem' }}>{a.patient_name}</td>
                     <td style={{ padding: '0.25rem' }}>{a.doctor_name} <em>({a.specialty})</em></td>
+                    <td style={{ padding: '0.25rem' }}><button onClick={() => onCancel(a.id)} disabled={cancellingId !== null} style={{ color: '#c00' }}>{cancellingId === a.id ? 'Cancelling…' : 'Cancel'}</button></td>
                   </tr>
                 ))}
               </tbody>
