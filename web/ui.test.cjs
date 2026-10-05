@@ -1,0 +1,52 @@
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+require('node:fs').mkdirSync('screenshots', {recursive:true});
+(async () => {
+ const browser = await chromium.launch({headless:true,args:['--no-sandbox']});
+ const page = await browser.newPage({viewport:{width:1360,height:1000}});
+ await page.clock.install({time:new Date('2030-01-01T00:00:00Z')});
+ const errors=[]; page.on('pageerror',error=>errors.push(error.message));
+ const machines=[{id:1,name:'เครื่อง 01',capacity_kg:9},{id:2,name:'เครื่อง 02',capacity_kg:12},{id:3,name:'เครื่อง 03',capacity_kg:15}];
+ const records=[];
+ await page.route('**/api/**',async route=>{
+  const request=route.request(), path=new URL(request.url()).pathname;
+  let result, status=200;
+  if(path==='/api/machines') result=machines;
+  else if(path==='/api/bookings' && request.method()==='GET') result=records;
+  else if(path==='/api/bookings' && request.method()==='POST') {
+   const data=request.postDataJSON();
+   result={id:records.length+1,machine_id:data.machine_id,machine_name:machines.find(m=>m.id===data.machine_id).name,customer_name:data.customer_name,slot:new Date(`${data.date}T${String(data.hour).padStart(2,'0')}:00:00+07:00`).toISOString(),status:'booked',cancelled_at:null};
+   records.push(result); status=201;
+  } else if(path.endsWith('/cancel')) {result=records.find(b=>b.id===Number(path.split('/')[3]));result.status='cancelled';result.cancelled_at=new Date().toISOString();}
+  else throw new Error('Unexpected request '+path);
+  await route.fulfill({status,contentType:'application/json',body:JSON.stringify(result)});
+ });
+ await page.goto('http://127.0.0.1:5173');
+ await page.getByRole('button',{name:/เครื่อง 01/}).waitFor();
+ await page.getByLabel('ชื่อผู้จอง',{exact:true}).fill('TEST WASHQ');
+ await page.getByLabel('วันที่ต้องการซัก').fill('2030-01-02');
+ await page.getByRole('button',{name:'10:00–11:00 ว่าง',exact:true}).click();
+ await page.getByRole('button',{name:/ยืนยันการจอง/}).click();
+ await page.getByRole('button',{name:'ยกเลิกคิวของ TEST WASHQ เครื่อง 01',exact:true}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'10:00–11:00 เต็มแล้ว',exact:true}).isDisabled(),true);
+ page.once('dialog',dialog=>dialog.dismiss());
+ await page.getByRole('button',{name:'ยกเลิกคิวของ TEST WASHQ เครื่อง 01',exact:true}).click();
+ assert.equal(records[0].status,'booked');
+ page.once('dialog',dialog=>dialog.accept());
+ await page.getByRole('button',{name:'ยกเลิกคิวของ TEST WASHQ เครื่อง 01',exact:true}).click();
+ await page.getByText('ยกเลิกคิวแล้ว รายการยังอยู่ในประวัติ และรอบนี้เปิดให้จองใหม่ได้',{exact:false}).waitFor();
+ assert.equal(await page.locator('tr.cancelled-row').count(),1);
+ assert.equal(await page.getByRole('button',{name:'10:00–11:00 ว่าง',exact:true}).isEnabled(),true);
+ await page.getByLabel('ชื่อผู้จอง',{exact:true}).fill('TEST REBOOK');
+ await page.getByRole('button',{name:'10:00–11:00 ว่าง',exact:true}).click();
+ await page.getByRole('button',{name:/ยืนยันการจอง/}).click();
+ await page.getByRole('button',{name:'ยกเลิกคิวของ TEST REBOOK เครื่อง 01',exact:true}).waitFor();
+ assert.equal(records.length,2);
+ await page.screenshot({path:'screenshots/washq-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ await page.screenshot({path:'screenshots/washq-mobile.png',fullPage:true});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'page must not overflow horizontally');
+ assert.deepEqual(errors,[]);
+ console.log('PASS: browser booking, full-slot disabling, dismiss/confirm cancellation, history, rebooking, mobile overflow; no JS errors. API mocked.');
+ await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

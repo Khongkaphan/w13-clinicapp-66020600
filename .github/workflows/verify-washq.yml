@@ -1,0 +1,57 @@
+name: Verify WashQ
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: ['feat/washq-bookings']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: 'Y'
+          MSSQL_SA_PASSWORD: 'WashQ-Disposable-CI-Only-943!'
+        ports: ['1433:1433']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - run: npm ci
+        working-directory: server
+      - run: npm test
+        working-directory: server
+        env:
+          WASHQ_TEST_SQL: 'Server=localhost,1433;Database=master;User Id=sa;Password=WashQ-Disposable-CI-Only-943!;Encrypt=true;TrustServerCertificate=true;Connection Timeout=3'
+      - run: npm ci
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - name: Install browser for UI verification
+        working-directory: web
+        run: |
+          npm install --no-save --package-lock=false playwright@1.58.2
+          npx playwright install --with-deps chromium
+      - name: Verify booking and cancellation in desktop and mobile UI
+        working-directory: web
+        run: |
+          npm run dev -- --host 127.0.0.1 > /tmp/washq-vite.log 2>&1 &
+          VITE_PID=$!
+          trap 'kill "$VITE_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:5173 > /dev/null; then break; fi
+            sleep 1
+          done
+          node ui.test.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: washq-ui-screenshots
+          path: web/screenshots/
+          if-no-files-found: ignore

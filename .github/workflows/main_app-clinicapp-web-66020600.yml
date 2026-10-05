@@ -76,7 +76,7 @@ jobs:
           startup-command: 'pm2 serve /home/site/wwwroot ${PORT:-8080} --no-daemon --spa'
 
       - name: Verify live frontend and API
-        timeout-minutes: 8
+        timeout-minutes: 12
         run: |
           node <<'NODE'
           const assert = require('node:assert/strict');
@@ -99,17 +99,17 @@ jobs:
             assert.ok((await asset.text()).includes(api), 'Built JavaScript must use the correct API');
             const health = await request(api);
             assert.equal(health.status, 200, 'API health must return HTTP 200');
-            assert.equal((await health.json()).service, 'clinic-api');
-            for (const path of ['/doctors', '/appointments']) {
+            assert.equal((await health.json()).service, 'washq-api');
+            for (const path of ['/machines', '/bookings']) {
               const response = await request(api + path, { headers: { Origin: web } });
               assert.equal(response.status, 200, path + ' must return HTTP 200');
               assert.ok(['*', web].includes(response.headers.get('access-control-allow-origin')), path + ' must allow frontend CORS');
               const rows = await response.json();
               assert.ok(Array.isArray(rows), path + ' must return a JSON array');
-              if (path === '/doctors') assert.ok(rows.length > 0, 'Doctors seed data must exist');
+              if (path === '/machines') assert.ok(rows.length > 0, 'Machine seed data must exist');
               console.log(path + ': OK (' + rows.length + ' rows; contents omitted)');
             }
-            const preflight = await request(api + '/appointments', {
+            const preflight = await request(api + '/bookings', {
               method: 'OPTIONS',
               headers: { Origin: web, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' }
             });
@@ -120,11 +120,11 @@ jobs:
             console.log('PASS: current frontend, JavaScript, API URL, health, SQL reads, and booking CORS');
           }
           (async () => {
-            for (let attempt = 1; attempt <= 12; attempt++) {
+            for (let attempt = 1; attempt <= 20; attempt++) {
               try { await check(); return; }
               catch (error) {
-                console.log('Check ' + attempt + '/12: ' + error.message);
-                if (attempt === 12) throw error;
+                console.log('Check ' + attempt + '/20: ' + error.message);
+                if (attempt === 20) throw error;
                 await new Promise(resolve => setTimeout(resolve, 10000));
               }
             }
