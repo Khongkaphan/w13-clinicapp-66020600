@@ -1,120 +1,95 @@
-# W13 Clinic App — Starter
+# WashQ — ระบบจองคิวเครื่องซักผ้า
 
-**225381 · Application Development with Cloud Platform · Week 13**
-**จัดทำ:** 17 กันยายน 2026 · โดยน้องวิจัย Oracle (AI-generated — พี่กิ๊กตรวจก่อนใช้)
+มินิโปรเจกต์หน้าเดียว ต่อยอดจาก Clinic App: เลือกเครื่อง 3 เครื่อง จองรอบละ 1 ชั่วโมง และยกเลิกโดยเก็บประวัติไว้ในตารางเดียวกัน
 
-A small Bangkok Hospital clinic appointment app. Three resources on Azure:
+## การใช้งาน
 
-- **App Service** (`app-clinicapp-api-dev`) — Node.js 20 LTS Express API
-- **Static Web App** (`app-clinicapp-web-dev`) — React + Vite front-end
-- **Azure SQL Database** (`clinicdb`) — doctors + appointments
+1. เลือกเครื่อง 01 (9 กก.), 02 (12 กก.) หรือ 03 (15 กก.)
+2. กรอกชื่อ เลือกวันที่และรอบ 08:00–19:00 น. (รอบสุดท้ายสิ้นสุด 20:00 น.)
+3. กดยืนยันการจอง รายการจะแสดงในตาราง
+4. กด Cancel และยืนยัน ระบบเปลี่ยนสถานะเป็น `cancelled` และบันทึกเวลายกเลิก
+5. รายการเดิมยังอยู่ และสามารถจองเครื่อง/รอบเดิมใหม่ได้
 
-## Layout
+เวลาบนหน้าเว็บเป็นเวลาไทย (Asia/Bangkok) เสมอ ฐานข้อมูลเก็บ UTC ไม่อนุญาตจองย้อนหลังหรือจองเครื่องเดียวกันในรอบเดียวกัน การจองพร้อมกันป้องกันด้วย unique filtered index ใน SQL Server
 
-```
-w13-clinicapp-starter/
-├── README.md
-├── .gitignore
-├── .env.example
-├── db/
-│   ├── schema.sql         -- CREATE TABLE doctors + appointments
-│   └── seed-data.sql      -- 5 sample doctors
-├── server/                -- Express API
-│   ├── package.json
-│   ├── index.js
-│   ├── db.js
-│   ├── .env.example
-│   └── .gitignore
-└── web/                   -- React + Vite front-end
-    ├── package.json
-    ├── index.html
-    ├── vite.config.js
-    ├── .gitignore
-    └── src/
-        ├── main.jsx
-        └── App.jsx
-```
+ระบบนี้ใช้สาธิตในชั้นเรียน ไม่มีล็อกอิน ทุกคนเห็นชื่อและรายการจองร่วมกัน และยกเลิกรายการได้ ใช้ชื่อทดสอบ ไม่ใช่ข้อมูลส่วนตัวจริง ไม่มีระบบชำระเงินหรือควบคุมเครื่องซักผ้าจริง
 
-## What it does
+## รันบนเครื่อง (Node.js 22 หรือ 24)
 
-- `GET /` — health check
-- `GET /doctors` — list doctors (JSON)
-- `GET /appointments` — list appointments joined with doctor
-- `POST /appointments` — book an appointment
-
-## Run locally (no Azure needed)
+เปิด Terminal ที่โฟลเดอร์โปรเจกต์:
 
 ```powershell
-# 1. install
-cd server; npm install; cd ..
-cd web;    npm install; cd ..
-
-# 2. start API (terminal 1)
 cd server
-copy .env.example .env
-# leave AZURE_SQL_CONNECTION_STRING empty for now
-npm run dev          # http://localhost:8080  (server boots; /doctors returns 503)
-
-# 3. start front-end (terminal 2)
-cd web
-npm run dev          # http://localhost:5173
+npm ci
+# ทำบรรทัดถัดไปเฉพาะเมื่อยังไม่มี .env เท่านั้น
+Copy-Item .env.example .env
 ```
 
-The front-end calls the API via Vite proxy (`/api/*` → `http://localhost:8080`).
-Without a database, the UI shows a clear "Error: database_not_configured" — that's expected.
+ใส่ `AZURE_SQL_CONNECTION_STRING` ใน `server/.env` ด้วยค่าของคุณ ห้าม commit ไฟล์นี้ หากใช้ Azure SQL เครื่องของคุณต้องเชื่อมต่อผ่าน firewall ที่อนุญาต IP ของคุณด้วย
 
-## Connect to Azure SQL
+```powershell
+npm run dev
+```
 
-1. In Azure Portal → your SQL database → **Connection strings** → ADO.NET → copy
-2. `server/.env` → paste into `AZURE_SQL_CONNECTION_STRING=...`
-3. Load schema: Azure Portal → SQL database → **Query editor** → paste contents of `db/schema.sql` → Run
-4. Then paste `db/seed-data.sql` → Run
-5. `cd server && npm run dev` → visit `http://localhost:8080/doctors` → should return 5 doctors
+เปิด Terminal อีกหน้าต่าง:
 
-## Deploy to Azure
+```powershell
+cd web
+npm ci
+npm run dev
+```
 
-### Backend → App Service
+เปิด http://localhost:5173 หน้าเว็บเรียก API ผ่าน Vite proxy ไป localhost:8080
 
-1. Azure Portal → **App Services** → Create `app-clinicapp-api-dev` (Node 20 LTS, F1 free tier)
-2. **Deployment Center** → GitHub → select your repo → **App Service** builds a workflow automatically
-3. **Configuration** → Application settings → add:
-   - `AZURE_SQL_CONNECTION_STRING` = (your string)
-   - `SCM_DO_BUILD_DURING_DEPLOYMENT` = `true` (so `npm install` runs on the server)
-4. Push to GitHub → Actions deploys → check `https://app-clinicapp-api-dev.azurewebsites.net/doctors`
+## ฐานข้อมูล
 
-### Front-end → Static Web App
+ใช้ Azure SQL เดิมผ่าน `AZURE_SQL_CONNECTION_STRING` ตารางใหม่ชื่อ `laundry_machines` และ `laundry_bookings` ข้อมูลคลินิกใน `doctors` / `appointments` ไม่ถูกแปลงหรือลบทิ้ง
 
-1. Azure Portal → **Static Web Apps** → Create `app-clinicapp-web-dev` → Connect to GitHub → pick your repo
-2. Build preset: **Vite** · App location: `web` · Output location: `dist`
-3. Azure auto-creates `.github/workflows/azure-static-web-apps-*.yml`
-4. Push → Actions deploys → get the public URL
+API จะรัน `server/sql/laundry.sql` เมื่อมีคำขอข้อมูลครั้งแรก สคริปต์ทำซ้ำได้และสร้างเครื่องตัวอย่างเฉพาะรายการที่ยังไม่มี จึงไม่ต้องส่งรหัสผ่านผ่าน GitHub หรือตั้ง secret ใหม่ บัญชีฐานข้อมูลต้องมีสิทธิ์สร้างตาราง/ดัชนี หากบัญชีแอปไม่มีสิทธิ์ ให้เจ้าของฐานข้อมูลรันไฟล์นี้ใน Azure SQL Query editor ก่อน
 
-> **The repo has one branch but two deployment workflows** — App Service deploys `server/` and Static Web App deploys `web/`. Both workflows coexist; each Azure service only cares about its own paths.
+`db/schema.sql` และ `db/seed-data.sql` เป็นไฟล์คลินิกเดิม เก็บไว้เพื่ออ้างอิง ไม่ต้องรันสำหรับ WashQ
 
-## How students use this
+## API
 
-1. Fork the repo: <https://github.com/thammarat-ai/w13-clinicapp-starter>
-2. Rename to `w13-clinicapp-<github-username>` (matches `lab-W13` naming convention)
-3. Read `lessons/week-13/handout/handout-W13-azure-hands-on-1.md` for the 7-step lab
-4. Deploy (follow this README) — the workflow auto-builds on every push
-5. Take screenshots for the rubric in §11
+| Method | Path | ผลลัพธ์ |
+|---|---|---|
+| GET | `/` | Health: `washq-api` |
+| GET | `/machines` | เครื่องซักผ้า |
+| GET | `/bookings` | รายการจองรวมประวัติยกเลิก |
+| POST | `/bookings` | สร้างการจอง (201), ซ้ำคืน 409 |
+| PATCH | `/bookings/:id/cancel` | เปลี่ยนสถานะและเก็บเวลายกเลิก กดซ้ำไม่เปลี่ยนเวลาเดิม |
 
-## Endpoints match W13 lab rubric
+ตัวอย่าง body สำหรับจอง: `{"machine_id":1,"customer_name":"ทดสอบ","date":"2030-01-02","hour":10}` ใช้วันเวลาในอนาคต ทุกชั่วโมงอิงเวลาไทย
 
-| Rubric check | Endpoint | Status |
-|--------------|----------|--------|
-| API responds GET /doctors with JSON | `GET /doctors` | ✅ implemented |
-| Front-end renders doctor list | `web/src/App.jsx` | ✅ implemented |
-| Booking persists to SQL DB | `POST /appointments` | ✅ implemented |
-| Auto-deploy on push | GitHub Actions (Azure-generated) | ✅ wired |
-| Reflection | (student-written) | — |
+## ทดสอบ
 
-## Notes
+```powershell
+cd server
+npm test
+cd ../web
+npm run build
+```
 
-- The repo contains **no secrets**. Connection strings live in `.env` (not committed) or Azure App Service application settings (not committed).
-- Azure Free tier F1 has 1-instance-per-region limit. If your W6 lab left an App Service behind, **delete it first** (B3 in the course plan).
-- This is a teaching starter — production hardening (Key Vault, Managed Identity, Private Endpoint) is the focus of W14.
+Unit/API tests ใช้ store จำลอง ตรวจ validation, จองซ้ำ, ยกเลิกและจองใหม่โดยประวัติไม่หาย CI `Verify WashQ` ทดสอบ SQL Server จริงใน container ชั่วคราว รวมการจองพร้อมกันสองคำขอและการรัน schema ซ้ำ รหัสผ่านที่อยู่ใน workflow นั้นใช้เฉพาะ container ชั่วคราว ไม่มีข้อมูล Azure จริง
 
-## License
+การทดสอบด้วย SQL จะข้ามเมื่อไม่มี `WASHQ_TEST_SQL` ห้ามตั้งตัวแปรนี้ให้ชี้ฐานข้อมูลใช้งานจริง
 
-MIT
+## Deploy
+
+ใช้ Azure App Services และ GitHub Actions เดิม เมื่อ merge เข้า main จะ deploy frontend/API โดยชื่อ Azure resource ยังเป็น `app-clinicapp-web-66020600` และ `app-clinicapp-api-66020600` ไม่ต้องสร้างบริการเพิ่ม
+
+Frontend build รับ `VITE_API_BASE` จาก workflow และใช้ PM2 serve ไฟล์ static บน Azure ขั้นตรวจหลัง deploy ตรวจหน้าเว็บล่าสุด API เครื่อง/การจอง และ CORS
+
+หลังอัปเดตจาก GitHub บนเครื่องผู้ใช้:
+
+```powershell
+git pull --ff-only origin main
+cd server
+npm ci
+npm test
+cd ../web
+npm ci
+npm run build
+```
+
+เปิดเว็บแล้วทดสอบด้วยชื่อ `TEST WASHQ`: จอง → ลองจองรอบซ้ำ → ยกเลิก → รายการยังอยู่และมีเวลายกเลิก → จองรอบเดิมใหม่ → รีเฟรชแล้วข้อมูลยังคงอยู่
